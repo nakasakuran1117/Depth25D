@@ -30,7 +30,7 @@ class ParallaxView(context: Context) : GLSurfaceView(context), SensorEventListen
     private var lastY = 0f
 
     private val sm = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-    private val rotSensor: Sensor? = sm.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
+        private val rotSensor: Sensor? = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         ?: sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
     private var tiltOn = false
     private var autoOn = false
