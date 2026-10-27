@@ -2,6 +2,10 @@ package com.example.depth25d
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.opengl.GLUtils
@@ -12,13 +16,37 @@ import java.nio.FloatBuffer
 import java.nio.ShortBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import kotlin.math.sin
 
-class ParallaxView(context: Context) : GLSurfaceView(context) {
+// 傾きの向きが逆に感じたら、どちらかを -1f にする
+private const val SIGN_X = 1f
+private const val SIGN_Y = 1f
+
+class ParallaxView(context: Context) : GLSurfaceView(context), SensorEventListener {
     private val r = Renderer()
-    private var offX = 0f
-    private var offY = 0f
+    private var dragX = 0f
+    private var dragY = 0f
     private var lastX = 0f
     private var lastY = 0f
+
+    private val sm = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    private val rotSensor: Sensor? = sm.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
+        ?: sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+    private var tiltOn = false
+    private var autoOn = false
+    private var base: FloatArray? = null
+    private var sx = 0f
+    private var sy = 0f
+    private val rot = FloatArray(9)
+
+    val tiltAvailable: Boolean get() = rotSensor != null
+
+    var strength: Float
+        get() = r.strength
+        set(v) {
+            r.strength = v
+            requestRender()
+        }
 
     init {
         setEGLContextClientVersion(3)
@@ -31,16 +59,77 @@ class ParallaxView(context: Context) : GLSurfaceView(context) {
         requestRender()
     }
 
+    fun setTilt(on: Boolean) {
+        tiltOn = on
+        base = null
+        sx = 0f
+        sy = 0f
+        r.tiltX = 0f
+        r.tiltY = 0f
+        if (on) registerSensor() else sm.unregisterListener(this)
+        updateMode()
+    }
+
+    fun setAuto(on: Boolean) {
+        autoOn = on
+        r.auto = on
+        updateMode()
+    }
+
+    private fun updateMode() {
+        renderMode = if (tiltOn || autoOn) RENDERMODE_CONTINUOUSLY else RENDERMODE_WHEN_DIRTY
+        requestRender()
+    }
+
+    private fun registerSensor() {
+        rotSensor?.let { sm.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (tiltOn) {
+            base = null
+            registerSensor()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        sm.unregisterListener(this)
+    }
+
+    override fun onSensorChanged(e: SensorEvent) {
+        SensorManager.getRotationMatrixFromVector(rot, e.values)
+        val ux = rot[6]
+        val uz = rot[8]
+        val b = base
+        if (b == null) {
+            base = floatArrayOf(ux, uz)
+            return
+        }
+        val tx = (ux - b[0]) * 3f * SIGN_X
+        val ty = (uz - b[1]) * 3f * SIGN_Y
+        sx += (tx - sx) * 0.15f
+        sy += (ty - sy) * 0.15f
+        r.tiltX = sx
+        r.tiltY = sy
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.action) {
-            MotionEvent.ACTION_DOWN -> { lastX = e.x; lastY = e.y }
-            MotionEvent.ACTION_MOVE -> {
-                offX = (offX + (e.x - lastX) / width * 2f).coerceIn(-1f, 1f)
-                offY = (offY - (e.y - lastY) / height * 2f).coerceIn(-1f, 1f)
+            MotionEvent.ACTION_DOWN -> {
                 lastX = e.x
                 lastY = e.y
-                r.offX = offX
-                r.offY = offY
+            }
+            MotionEvent.ACTION_MOVE -> {
+                dragX = (dragX + (e.x - lastX) / width * 2f).coerceIn(-1f, 1f)
+                dragY = (dragY - (e.y - lastY) / height * 2f).coerceIn(-1f, 1f)
+                lastX = e.x
+                lastY = e.y
+                r.dragX = dragX
+                r.dragY = dragY
                 requestRender()
             }
         }
@@ -48,9 +137,12 @@ class ParallaxView(context: Context) : GLSurfaceView(context) {
     }
 
     private class Renderer : GLSurfaceView.Renderer {
-        @Volatile var offX = 0f
-        @Volatile var offY = 0f
-        var strength = 0.25f
+        @Volatile var dragX = 0f
+        @Volatile var dragY = 0f
+        @Volatile var tiltX = 0f
+        @Volatile var tiltY = 0f
+        @Volatile var auto = false
+        @Volatile var strength = 0.25f
 
         private var prog = 0
         private var texImage = 0
@@ -176,12 +268,23 @@ void main() { oColor = texture(uImage, vUv); }"""
             GLES30.glClearColor(0f, 0f, 0f, 1f)
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
             if (!loaded) return
+
+            var ox = dragX + tiltX
+            var oy = dragY + tiltY
+            if (auto) {
+                val t = System.nanoTime() / 1e9
+                ox += (0.6 * sin(t * 0.7)).toFloat()
+                oy += (0.35 * sin(t * 1.1 + 1.0)).toFloat()
+            }
+            ox = ox.coerceIn(-1.2f, 1.2f)
+            oy = oy.coerceIn(-1.2f, 1.2f)
+
             GLES30.glUseProgram(prog)
             val va = vw.toFloat() / vh
             val sx = if (imgAspect > va) 1f else imgAspect / va
             val sy = if (imgAspect > va) va / imgAspect else 1f
             GLES30.glUniform2f(GLES30.glGetUniformLocation(prog, "uScale"), sx, sy)
-            GLES30.glUniform2f(GLES30.glGetUniformLocation(prog, "uOffset"), offX, offY)
+            GLES30.glUniform2f(GLES30.glGetUniformLocation(prog, "uOffset"), ox, oy)
             GLES30.glUniform1f(GLES30.glGetUniformLocation(prog, "uStrength"), strength)
             GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texImage)
