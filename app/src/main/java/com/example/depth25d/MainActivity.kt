@@ -8,8 +8,10 @@ import android.graphics.Matrix
 import android.net.Uri
 import android.os.Bundle
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import androidx.exifinterface.media.ExifInterface
 
@@ -22,6 +24,10 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        status = TextView(this).apply { text = "画像を選んでください" }
+        glView = ParallaxView(this)
+        depthView = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
+
         val button = Button(this).apply {
             text = "画像を選ぶ"
             setOnClickListener {
@@ -29,16 +35,49 @@ class MainActivity : Activity() {
                 startActivityForResult(i, reqPick)
             }
         }
-        status = TextView(this).apply { text = "画像を選んでください" }
-        glView = ParallaxView(this)
-        depthView = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
+        val tilt = CheckBox(this).apply {
+            text = "傾き"
+            setOnCheckedChangeListener { _, on ->
+                if (on && !glView.tiltAvailable) {
+                    isChecked = false
+                    status.text = "この端末は傾きセンサー非対応です"
+                } else {
+                    glView.setTilt(on)
+                }
+            }
+        }
+        val auto = CheckBox(this).apply {
+            text = "自動"
+            setOnCheckedChangeListener { _, on -> glView.setAuto(on) }
+        }
+        val checks = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(tilt)
+            addView(auto)
+        }
+        val label = TextView(this).apply { text = "奥行きの強さ" }
+        val seek = SeekBar(this).apply {
+            max = 100
+            progress = 42
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
+                    glView.strength = p / 100f * 0.6f
+                }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) {}
+            })
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 96, 24, 24)
             addView(button)
             addView(status)
+            addView(checks)
+            addView(label)
+            addView(seek)
             addView(glView, LinearLayout.LayoutParams(-1, 0, 2f))
-            addView(depthView, LinearLayout.LayoutParams(-1, 0, 0.7f))
+            addView(depthView, LinearLayout.LayoutParams(-1, 0, 0.6f))
         }
         setContentView(root)
     }
