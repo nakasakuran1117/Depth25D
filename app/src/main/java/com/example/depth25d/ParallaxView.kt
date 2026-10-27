@@ -99,9 +99,14 @@ class ParallaxView(context: Context) : GLSurfaceView(context), SensorEventListen
     }
 
     override fun onSensorChanged(e: SensorEvent) {
-        SensorManager.getRotationMatrixFromVector(rot, e.values)
-        val ux = rot[6]
-        val uz = rot[8]
+                val ax = e.values[0]
+        val az = e.values[2]
+        val norm = Math.sqrt(
+            (ax * ax + e.values[1] * e.values[1] + az * az).toDouble()
+        ).toFloat()
+        if (norm < 1f) return
+        val ux = ax / norm
+        val uz = az / norm
         val b = base
         if (b == null) {
             base = floatArrayOf(ux, uz)
