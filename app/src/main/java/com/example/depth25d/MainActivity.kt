@@ -14,7 +14,7 @@ import android.widget.TextView
 import androidx.exifinterface.media.ExifInterface
 
 class MainActivity : Activity() {
-    private lateinit var imageView: ImageView
+    private lateinit var glView: ParallaxView
     private lateinit var depthView: ImageView
     private lateinit var status: TextView
     private var estimator: DepthEstimator? = null
@@ -30,17 +30,27 @@ class MainActivity : Activity() {
             }
         }
         status = TextView(this).apply { text = "画像を選んでください" }
-        imageView = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
+        glView = ParallaxView(this)
         depthView = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 96, 24, 24)
             addView(button)
             addView(status)
-            addView(imageView, LinearLayout.LayoutParams(-1, 0, 1f))
-            addView(depthView, LinearLayout.LayoutParams(-1, 0, 1f))
+            addView(glView, LinearLayout.LayoutParams(-1, 0, 2f))
+            addView(depthView, LinearLayout.LayoutParams(-1, 0, 0.7f))
         }
         setContentView(root)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        glView.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        glView.onResume()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -48,7 +58,6 @@ class MainActivity : Activity() {
         if (requestCode != reqPick || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         val bmp = loadBitmap(uri, 1536) ?: return
-        imageView.setImageBitmap(bmp)
         depthView.setImageBitmap(null)
         status.text = "深度推定中…"
         Thread {
@@ -59,7 +68,8 @@ class MainActivity : Activity() {
                 val ms = System.currentTimeMillis() - t0
                 runOnUiThread {
                     depthView.setImageBitmap(depth)
-                    status.text = "完了: ${ms}ms"
+                    glView.setScene(bmp, depth)
+                    status.text = "完了: ${ms}ms（指でドラッグ）"
                 }
             } catch (e: Throwable) {
                 runOnUiThread { status.text = "エラー: ${e.message}" }
