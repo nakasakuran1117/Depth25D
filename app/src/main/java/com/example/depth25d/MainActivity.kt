@@ -10,10 +10,14 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.exifinterface.media.ExifInterface
 
 class MainActivity : Activity() {
     private lateinit var imageView: ImageView
+    private lateinit var depthView: ImageView
+    private lateinit var status: TextView
+    private var estimator: DepthEstimator? = null
     private val reqPick = 1
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -25,23 +29,42 @@ class MainActivity : Activity() {
                 startActivityForResult(i, reqPick)
             }
         }
-        imageView = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.FIT_CENTER
-        }
+        status = TextView(this).apply { text = "画像を選んでください" }
+        imageView = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
+        depthView = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 96, 24, 24)
             addView(button)
+            addView(status)
             addView(imageView, LinearLayout.LayoutParams(-1, 0, 1f))
+            addView(depthView, LinearLayout.LayoutParams(-1, 0, 1f))
         }
         setContentView(root)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == reqPick && resultCode == RESULT_OK) {
-            data?.data?.let { imageView.setImageBitmap(loadBitmap(it, 1536)) }
-        }
+        if (requestCode != reqPick || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        val bmp = loadBitmap(uri, 1536) ?: return
+        imageView.setImageBitmap(bmp)
+        depthView.setImageBitmap(null)
+        status.text = "深度推定中…"
+        Thread {
+            try {
+                val est = estimator ?: DepthEstimator(this).also { estimator = it }
+                val t0 = System.currentTimeMillis()
+                val depth = est.estimate(bmp)
+                val ms = System.currentTimeMillis() - t0
+                runOnUiThread {
+                    depthView.setImageBitmap(depth)
+                    status.text = "完了: ${ms}ms"
+                }
+            } catch (e: Throwable) {
+                runOnUiThread { status.text = "エラー: ${e.message}" }
+            }
+        }.start()
     }
 
     private fun loadBitmap(uri: Uri, maxSide: Int): Bitmap? {
