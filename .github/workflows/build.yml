@@ -10,6 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Download depth model
+        run: |
+          mkdir -p app/src/main/assets
+          curl -L --fail -o app/src/main/assets/depth_model.tflite https://github.com/isl-org/MiDaS/releases/download/v2/model_opt.tflite
+          ls -l app/src/main/assets
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
