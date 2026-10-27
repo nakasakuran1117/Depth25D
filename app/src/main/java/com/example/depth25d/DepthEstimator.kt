@@ -28,14 +28,12 @@ class DepthEstimator(context: Context) {
     fun estimate(src: Bitmap): Bitmap {
         val scaled = Bitmap.createScaledBitmap(src, inW, inH, true)
         val input = ByteBuffer.allocateDirect(4 * inW * inH * 3).order(ByteOrder.nativeOrder())
-        val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
-        val std = floatArrayOf(0.229f, 0.224f, 0.225f)
         val px = IntArray(inW * inH)
         scaled.getPixels(px, 0, inW, 0, 0, inW, inH)
         for (p in px) {
-            input.putFloat((Color.red(p) / 255f - mean[0]) / std[0])
-            input.putFloat((Color.green(p) / 255f - mean[1]) / std[1])
-            input.putFloat((Color.blue(p) / 255f - mean[2]) / std[2])
+            input.putFloat(Color.red(p) / 127.5f - 1f)
+            input.putFloat(Color.green(p) / 127.5f - 1f)
+            input.putFloat(Color.blue(p) / 127.5f - 1f)
         }
         input.rewind()
 
@@ -43,6 +41,7 @@ class DepthEstimator(context: Context) {
         val oH = os[1]
         val oW = os[2]
         val count = os.fold(1) { a, b -> a * b }
+        val ch = maxOf(1, count / (oH * oW))
         val out = ByteBuffer.allocateDirect(4 * count).order(ByteOrder.nativeOrder())
         interpreter.run(input, out)
         out.rewind()
@@ -51,11 +50,15 @@ class DepthEstimator(context: Context) {
 
         var mn = Float.MAX_VALUE
         var mx = -Float.MAX_VALUE
-        for (f in v) { if (f < mn) mn = f; if (f > mx) mx = f }
+        for (i in 0 until oH * oW) {
+            val f = v[i * ch]
+            if (f < mn) mn = f
+            if (f > mx) mx = f
+        }
         val range = if (mx - mn < 1e-6f) 1f else mx - mn
         val pixels = IntArray(oW * oH)
         for (i in pixels.indices) {
-            val g = (((v[i] - mn) / range) * 255f).toInt().coerceIn(0, 255)
+            val g = (((v[i * ch] - mn) / range) * 255f).toInt().coerceIn(0, 255)
             pixels[i] = Color.rgb(g, g, g)
         }
         return Bitmap.createBitmap(pixels, oW, oH, Bitmap.Config.ARGB_8888)
