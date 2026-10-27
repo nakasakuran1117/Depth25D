@@ -20,4 +20,5 @@ android {
 }
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 }
